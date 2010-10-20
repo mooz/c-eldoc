@@ -15,14 +15,12 @@ Installation
 First, download and compile `c-eldoc.el`
 
     wget http://github.com/mooz/c-eldoc/raw/master/c-eldoc.el
-    emacs --batch --eval '(byte-compile-file "c-eldoc.el")'
 
 If you havn't installed `deferred.el`,
 
     wget http://github.com/kiwanami/emacs-deferred/raw/master/deferred.el
-    emacs --batch --eval '(byte-compile-file "deferred.el")'
 
-Then, place `c-eldoc.elc` (and `deferred.elc`) into your site-lisp directory.
+Then, place `c-eldoc.el` (and `deferred.el`) into your site-lisp directory.
 
 Finally, add following lines to your emacs config file (e.g. `.emacs`).
 

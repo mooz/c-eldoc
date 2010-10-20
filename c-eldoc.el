@@ -216,7 +216,7 @@ T1 and T2 are time values (as returned by `current-time' for example)."
         (backward-char (length current-function))
         (c-skip-ws-backward)
         (setq function-name-point (point))
-        (search-backward-regexp "[};/#]" (point-min) t)
+        (search-backward-regexp "[{};/#]" (point-min) t)
         ;; check for macros
         (if (= (char-after) ?#)
             (let ((is-define (looking-at "#[[:space:]]*define"))
@@ -233,7 +233,9 @@ T1 and T2 are time values (as returned by `current-time' for example)."
         ;; colorize
         (c-skip-ws-forward)
         ;; return type, function name, arguments and type-face
-        (values (buffer-substring-no-properties (point) function-name-point)
+        (values (replace-regexp-in-string "^[[:space:]\n]+"
+                                          ""
+                                          (buffer-substring-no-properties (point) function-name-point))
                 current-function
                 arguments
                 type-face)))))

@@ -12,12 +12,12 @@ This forked version uses [deferred.el](http://github.com/kiwanami/emacs-deferred
 Installation
 ============
 
-First, download and compile c-eldoc.el
+First, download and compile `c-eldoc.el`
 
-   wget http://github.com/mooz/c-eldoc/raw/master/c-eldoc.el
-   emacs --batch --eval '(byte-compile-file "c-eldoc.el")'
+    wget http://github.com/mooz/c-eldoc/raw/master/c-eldoc.el
+    emacs --batch --eval '(byte-compile-file "c-eldoc.el")'
 
-If you havn't installed deferred.el,
+If you havn't installed `deferred.el`,
 
     wget http://github.com/kiwanami/emacs-deferred/raw/master/deferred.el
     emacs --batch --eval '(byte-compile-file "deferred.el")'

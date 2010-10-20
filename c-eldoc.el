@@ -44,11 +44,75 @@
 
 (require 'eldoc)
 (require 'deferred)
-;; without this, you can't compile this file and have it work properly
-;; since the `c-save-buffer-state' macro needs to be known as such
-(eval-when-compile
-  (require 'cc-defs)
-  (require 'cl))
+(require 'cc-defs)
+(eval-when-compile (require 'cl))
+
+;; ============================================================
+;; Cache
+;; ============================================================
+
+;;if cache.el isn't loaded, define the cache functions
+(unless (fboundp 'cache-make-cache)
+  (defun* cache-make-cache (init-fun test-fun cleanup-fun
+                                     &optional &key
+                                     (test #'eql)
+                                     (size 65)
+                                     (rehash-size 1.5)
+                                     (rehash-threshold 0.8)
+                                     (weakness nil))
+    "Creates a cached hash table.  This is a hash table where
+elements expire at some condition, as specified by init-fun and
+test-fun.  The three arguments do as follows:
+
+init-fun is a function that is called when a new item is inserted
+into the cache.
+
+test-fun is a function that is called when an item in the cache
+is looked up.  It takes one argument, and will be passed the
+result of init-fun that was generated when the item was inserted
+into the cache.
+
+cleanup-fun is called when an item is removed from the hash
+table.  It takes one argument, the value of the key-value pair
+being deleted.
+
+Note that values are only deleted from the cache when accessed.
+
+This will return a list of 4 elements: a has table and the 3
+arguments.  All hash-table functions will work on the car of this
+list, although if accessed directly the lookups will return a pair
+ (value, (init-fun)).
+
+The keyword arguments are the same as for make-hash-table and are applied
+to the created hash table."
+  (list (make-hash-table :test test
+                         :size size
+                         :rehash-size rehash-size
+                         :rehash-threshold rehash-threshold
+                         :weakness weakness) init-fun test-fun cleanup-fun))
+
+  (defun cache-gethash (key cache)
+    "Retrieve the value corresponding to key from cache."
+    (let ((keyval (gethash key (car cache) )))
+      (if keyval
+          (let ((val (car keyval))
+                (info (cdr keyval)))
+            (if (funcall (caddr cache) info)
+                (progn
+                  (remhash key (car cache))
+                  (funcall (cadddr cache) val)
+                  nil)
+              val)))))
+
+  (defun cache-puthash (key val cache)
+    "Puts the key-val pair into cache."
+    (puthash key
+             (cons val (funcall (cadr cache)))
+             (car cache))))
+
+;; ============================================================
+;; Variables
+;; ============================================================
 
 ;; make sure that the opening parenthesis in C will work
 (eldoc-add-command 'c-electric-paren)
@@ -83,8 +147,8 @@ T1 and T2 are time values (as returned by `current-time' for example)."
   (time-to-seconds (subtract-time t1 t2)))
 
 (defun c-eldoc-time-difference (old-time)
-  (> (c-eldoc-time-diff (current-time) old-time) c-eldoc-buffer-regenerate-time)
-  "Returns whether or not old-time is less than c-eldoc-buffer-regenerate-time seconds ago.")
+  "Returns whether or not old-time is less than c-eldoc-buffer-regenerate-time seconds ago."
+  (> (c-eldoc-time-diff (current-time) old-time) c-eldoc-buffer-regenerate-time))
 
 (defun c-eldoc-cleanup (preprocessed-buffer)
   (kill-buffer preprocessed-buffer))
@@ -279,33 +343,6 @@ T1 and T2 are time values (as returned by `current-time' for example)."
                      (match-beginning 0) (match-end 0))
                     argument-index))))))))
 
-(defsubst c-eldoc-function-and-argument (&optional limit)
-  "Finds the current function and position in argument list."
-  (let* ((literal-limits (c-literal-limits))
-         (literal-type (c-literal-type literal-limits)))
-    (save-excursion
-      ;; if this is a string, move out to function domain
-      (when (eq literal-type 'string)
-        (goto-char (car literal-limits))
-        (setq literal-type nil))
-      (if literal-type
-          nil
-        (c-save-buffer-state ((argument-index 1))
-          (while (or (eq (c-forward-token-2 -1 t limit) 0)
-                     (when (eq (char-before) ?\[)
-                       (backward-char)
-                       t))
-            (when (eq (char-after) ?,)
-              (setq argument-index (1+ argument-index))))
-          (c-backward-syntactic-ws)
-          (when (eq (char-before) ?\()
-            (backward-char)
-            (c-forward-token-2 -1)
-            (when (looking-at "[a-zA-Z_][a-zA-Z_0-9]*")
-              (cons (buffer-substring-no-properties
-                     (match-beginning 0) (match-end 0))
-                    argument-index))))))))
-
 (defun c-eldoc-print-current-symbol-info ()
   "Returns documentation string for the current symbol."
   (let* ((current-function-cons (c-eldoc-function-and-argument (- (point) 1000)))
@@ -327,69 +364,6 @@ T1 and T2 are time values (as returned by `current-time' for example)."
                 (eldoc-message (c-eldoc-create-message buffer c-eldoc-current-function-cons))))
             nil)
           )))))
-
-;; ============================================================
-;; Cache
-;; ============================================================
-
-;;if cache.el isn't loaded, define the cache functions
-(unless (fboundp 'cache-make-cache)
-  (defun* cache-make-cache (init-fun test-fun cleanup-fun
-                                     &optional &key
-                                     (test #'eql)
-                                     (size 65)
-                                     (rehash-size 1.5)
-                                     (rehash-threshold 0.8)
-                                     (weakness nil))
-    "Creates a cached hash table.  This is a hash table where
-elements expire at some condition, as specified by init-fun and
-test-fun.  The three arguments do as follows:
-
-init-fun is a function that is called when a new item is inserted
-into the cache.
-
-test-fun is a function that is called when an item in the cache
-is looked up.  It takes one argument, and will be passed the
-result of init-fun that was generated when the item was inserted
-into the cache.
-
-cleanup-fun is called when an item is removed from the hash
-table.  It takes one argument, the value of the key-value pair
-being deleted.
-
-Note that values are only deleted from the cache when accessed.
-
-This will return a list of 4 elements: a has table and the 3
-arguments.  All hash-table functions will work on the car of this
-list, although if accessed directly the lookups will return a pair
- (value, (init-fun)).
-
-The keyword arguments are the same as for make-hash-table and are applied
-to the created hash table."
-  (list (make-hash-table :test test
-                         :size size
-                         :rehash-size rehash-size
-                         :rehash-threshold rehash-threshold
-                         :weakness weakness) init-fun test-fun cleanup-fun))
-
-  (defun cache-gethash (key cache)
-    "Retrieve the value corresponding to key from cache."
-    (let ((keyval (gethash key (car cache) )))
-      (if keyval
-          (let ((val (car keyval))
-                (info (cdr keyval)))
-            (if (funcall (caddr cache) info)
-                (progn
-                  (remhash key (car cache))
-                  (funcall (cadddr cache) val)
-                  nil)
-              val)))))
-
-  (defun cache-puthash (key val cache)
-    "Puts the key-val pair into cache."
-    (puthash key
-             (cons val (funcall (cadr cache)))
-             (car cache))))
 
 (provide 'c-eldoc)
 ;;; c-eldoc.el ends here

@@ -3,7 +3,7 @@
 ;; Copyright (C) 2004 Paul Pogonyshev
 ;; Copyright (C) 2004, 2005 Matt Strange
 ;; Copyright (C) 2010 Nathaniel Flath
-;; Copyright (C) 2010 mooz
+;; Copyright (C) 2010 mooz <stillpedant@gmail.com>
 
 ;; This file is NOT a part of GNU Emacs
 

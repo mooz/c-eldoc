@@ -43,74 +43,19 @@
 ;;; Code:
 
 (require 'eldoc)
+(require 'deferred)
 ;; without this, you can't compile this file and have it work properly
 ;; since the `c-save-buffer-state' macro needs to be known as such
-(require 'cc-defs)
-(require 'cl)
-(require 'deferred)
+(eval-when-compile
+  (require 'cc-defs)
+  (require 'cl))
 
 ;; make sure that the opening parenthesis in C will work
 (eldoc-add-command 'c-electric-paren)
 
-;;if cache.el isn't loaded, define the cache functions
-(unless (fboundp 'cache-make-cache)
-  (defun* cache-make-cache (init-fun test-fun cleanup-fun
-                                     &optional &key
-                                     (test #'eql)
-                                     (size 65)
-                                     (rehash-size 1.5)
-                                     (rehash-threshold 0.8)
-                                     (weakness nil))
-    "Creates a cached hash table.  This is a hash table where
-elements expire at some condition, as specified by init-fun and
-test-fun.  The three arguments do as follows:
-
-init-fun is a function that is called when a new item is inserted
-into the cache.
-
-test-fun is a function that is called when an item in the cache
-is looked up.  It takes one argument, and will be passed the
-result of init-fun that was generated when the item was inserted
-into the cache.
-
-cleanup-fun is called when an item is removed from the hash
-table.  It takes one argument, the value of the key-value pair
-being deleted.
-
-Note that values are only deleted from the cache when accessed.
-
-This will return a list of 4 elements: a has table and the 3
-arguments.  All hash-table functions will work on the car of this
-list, although if accessed directly the lookups will return a pair
-(value, (init-fun)).
-
-The keyword arguments are the same as for make-hash-table and are applied
-to the created hash table."
-  (list (make-hash-table :test test
-                         :size size
-                         :rehash-size rehash-size
-                         :rehash-threshold rehash-threshold
-                         :weakness weakness) init-fun test-fun cleanup-fun))
-
-  (defun cache-gethash (key cache)
-    "Retrieve the value corresponding to key from cache."
-    (let ((keyval (gethash key (car cache) )))
-      (if keyval
-          (let ((val (car keyval))
-                (info (cdr keyval)))
-            (if (funcall (caddr cache) info)
-                (progn
-                  (remhash key (car cache))
-                  (funcall (cadddr cache) val)
-                  nil)
-              val)))))
-
-  (defun cache-puthash (key val cache)
-    "Puts the key-val pair into cache."
-    (puthash key
-             (cons val (funcall (cadr cache)))
-             (car cache))))
-
+(defface c-eldoc-current-argument-face
+  '((t (:foreground "tomato" :bold t)))
+  "Style of selected item in *Completions* buffer")
 
 ;; if you've got a non-GNU preprocessor with funny options, set these
 ;; variables to fix it
@@ -126,7 +71,6 @@ to the created hash table."
 (defvar c-eldoc-reserved-words
   (list "if" "else" "switch" "while" "for" "sizeof")
   "List of commands that eldoc will not check.")
-
 
 (defvar c-eldoc-buffer-regenerate-time
   120
@@ -187,16 +131,20 @@ T1 and T2 are time values (as returned by `current-time' for example)."
       ;; embolden the current argument
       (when (and pos
                  (setq pos (string-match "[^ ,()]" arguments pos)))
-        (add-text-properties pos (string-match "[,)]" arguments pos)
-                             '(face bold) arguments))
+
+        (put-text-property pos (string-match "[,)]" arguments pos)
+                           'face 'c-eldoc-current-argument-face
+                           arguments))
       arguments)))
 
 ;; ============================================================
 ;; Deferred
 ;; ============================================================
 
-(defvar c-eldoc-get-tag-deferred-table
+(defvar c-eldoc-pp-is-running-table
   (make-hash-table :test 'equal))
+
+(defvar c-eldoc-current-function-cons nil)
 
 (defsubst c-eldoc-deferred:command (command &rest args)
   (deferred:process
@@ -204,43 +152,39 @@ T1 and T2 are time values (as returned by `current-time' for example)."
     shell-command-switch
     (mapconcat 'identity (cons command args) " ")))
 
-(defsubst c-eldoc-deferred:tag-buffer (function-name)
+(defsubst c-eldoc-deferred:tag-buffer (buffer)
   "Call the preprocessor on the current file"
-  (let ((tag-buffer (cache-gethash (current-buffer) c-eldoc-buffers)))
-    (if tag-buffer
-        ;; use cache
-        (deferred:next `(lambda () ,tag-buffer))
-      ;; otherwise, call preprocessor
-      (lexical-let* ((command-for-macro (c-eldoc-create-preprocessor-command
-                                         c-eldoc-cpp-macro-arguments
-                                         buffer-file-name))
-                     (command-for-function (c-eldoc-create-preprocessor-command
-                                            c-eldoc-cpp-normal-arguments
-                                            buffer-file-name))
-                     (cur-buffer (current-buffer))
-                     (output-buffer (generate-new-buffer
-                                     (concat "*" buffer-file-name "-preprocessed*"))))
-        (bury-buffer output-buffer)
-        ;; create deferred and return it
-        (deferred:$
-          (c-eldoc-deferred:command command-for-macro)
-          ;; chain
-          (deferred:nextc it
-            `(lambda (result)
-               (with-current-buffer ,output-buffer (insert result))))
-          ;; chain
-          (c-eldoc-deferred:command command-for-function)
-          ;; chain
-          (deferred:nextc it
-            `(lambda (result)
-               (with-current-buffer ,output-buffer (insert result))
-               ;; cache
-               (cache-puthash ,cur-buffer ,output-buffer c-eldoc-buffers)
-               ;;
-               (remhash ,function-name c-eldoc-get-tag-deferred-table)
-               ;; return
-               ,output-buffer)))
-        ))))
+  (let* ((command-for-macro (c-eldoc-create-preprocessor-command
+                             c-eldoc-cpp-macro-arguments
+                             buffer-file-name))
+         (command-for-function (c-eldoc-create-preprocessor-command
+                                c-eldoc-cpp-normal-arguments
+                                buffer-file-name))
+         (output-buffer (generate-new-buffer
+                         (concat "*" buffer-file-name "-preprocessed*"))))
+    ;; mark as preprocessor is running on `buffer'
+    (puthash buffer t c-eldoc-pp-is-running-table)
+    (bury-buffer output-buffer)
+    ;; create deferred and return it
+    (deferred:$
+      (c-eldoc-deferred:command command-for-macro)
+      ;; chain
+      (deferred:nextc it
+        `(lambda (result)
+           (with-current-buffer ,output-buffer (insert result))))
+      ;; chain
+      (c-eldoc-deferred:command command-for-function)
+      ;; chain
+      (deferred:nextc it
+        `(lambda (result)
+           (with-current-buffer ,output-buffer (insert result))
+           ;; cache
+           (cache-puthash ,buffer ,output-buffer c-eldoc-buffers)
+           ;; done
+           (remhash ,buffer c-eldoc-pp-is-running-table)
+           ;; return
+           ,output-buffer)))
+    ))
 
 ;; ============================================================
 ;; C
@@ -248,7 +192,7 @@ T1 and T2 are time values (as returned by `current-time' for example)."
 
 (defun c-eldoc-get-info (buffer current-function)
   (let ((current-function-regexp (concat "[ \t\n]+[*]*" current-function "[ \t\n]*("))
-        (c-macro-regexp (concat "#define[ \t\n]+[*]*" current-function "[ \t\n]*("))
+        (current-macro-regexp (concat "#define[ \t\n]+[*]*" current-function "[ \t\n]*("))
         (arguments)
         (type-face 'font-lock-type-face)
         (function-name-point))
@@ -256,9 +200,10 @@ T1 and T2 are time values (as returned by `current-time' for example)."
       (goto-char (point-min))
       ;; protected regexp search
       (when (condition-case nil
-                (or (unless (re-search-forward c-macro-regexp (point-max) t)
+                (progn
+                  (if (not (re-search-forward current-macro-regexp (point-max) t))
                       (re-search-forward current-function-regexp))
-                    t)
+                  t)
               (error (prog1 nil (message "Function doesn't exist..."))))
         ;; move outside arguments list
         (search-backward "(")
@@ -292,15 +237,6 @@ T1 and T2 are time values (as returned by `current-time' for example)."
                 current-function
                 arguments
                 type-face)))))
-
-;; (defsubst c-eldoc-propertized-message (ret fun args)
-;;   (mapconcat
-;;    '((propertize ret 'face 'font-lock-type-face)
-;;      (propertize fun 'face 'font-lock-function-name-face)
-;;      (c-eldoc-format-arguments-string
-;;       arguments
-;;       (cdr current-function-cons)))
-;;    " "))
 
 (defsubst c-eldoc-create-message (buffer current-function-cons)
   (let* ((current-function (car current-function-cons))
@@ -370,16 +306,88 @@ T1 and T2 are time values (as returned by `current-time' for example)."
 
 (defun c-eldoc-print-current-symbol-info ()
   "Returns documentation string for the current symbol."
-  (lexical-let* ((current-function-cons (c-eldoc-function-and-argument (- (point) 1000)))
-                 (current-function (car current-function-cons)))
+  (let* ((current-function-cons (c-eldoc-function-and-argument (- (point) 1000)))
+         (current-function (car current-function-cons))
+         (cur-buffer (current-buffer)))
+    ;; save cons globally
+    (make-local-variable 'c-eldoc-current-function-cons)
+    (setq c-eldoc-current-function-cons current-function-cons)
     (when (and current-function
-               (not (member current-function c-eldoc-reserved-words))
-               (not (gethash current-function c-eldoc-get-tag-deferred-table)))
-      (deferred:nextc (c-eldoc-deferred:tag-buffer current-function)
-        (lambda (buffer)
-          (eldoc-message
-           (c-eldoc-create-message buffer current-function-cons))))
-      nil)))
+               (not (member current-function c-eldoc-reserved-words)))
+      (let ((tag-buffer (cache-gethash cur-buffer c-eldoc-buffers)))
+        (if tag-buffer
+            (c-eldoc-create-message tag-buffer c-eldoc-current-function-cons)
+          ;; else
+          (unless (gethash cur-buffer c-eldoc-pp-is-running-table)
+            (deferred:nextc (c-eldoc-deferred:tag-buffer cur-buffer)
+              (lambda (buffer)
+                ;; delayed. create and display last functions document.
+                (eldoc-message (c-eldoc-create-message buffer c-eldoc-current-function-cons))))
+            nil)
+          )))))
+
+;; ============================================================
+;; Cache
+;; ============================================================
+
+;;if cache.el isn't loaded, define the cache functions
+(unless (fboundp 'cache-make-cache)
+  (defun* cache-make-cache (init-fun test-fun cleanup-fun
+                                     &optional &key
+                                     (test #'eql)
+                                     (size 65)
+                                     (rehash-size 1.5)
+                                     (rehash-threshold 0.8)
+                                     (weakness nil))
+    "Creates a cached hash table.  This is a hash table where
+elements expire at some condition, as specified by init-fun and
+test-fun.  The three arguments do as follows:
+
+init-fun is a function that is called when a new item is inserted
+into the cache.
+
+test-fun is a function that is called when an item in the cache
+is looked up.  It takes one argument, and will be passed the
+result of init-fun that was generated when the item was inserted
+into the cache.
+
+cleanup-fun is called when an item is removed from the hash
+table.  It takes one argument, the value of the key-value pair
+being deleted.
+
+Note that values are only deleted from the cache when accessed.
+
+This will return a list of 4 elements: a has table and the 3
+arguments.  All hash-table functions will work on the car of this
+list, although if accessed directly the lookups will return a pair
+ (value, (init-fun)).
+
+The keyword arguments are the same as for make-hash-table and are applied
+to the created hash table."
+  (list (make-hash-table :test test
+                         :size size
+                         :rehash-size rehash-size
+                         :rehash-threshold rehash-threshold
+                         :weakness weakness) init-fun test-fun cleanup-fun))
+
+  (defun cache-gethash (key cache)
+    "Retrieve the value corresponding to key from cache."
+    (let ((keyval (gethash key (car cache) )))
+      (if keyval
+          (let ((val (car keyval))
+                (info (cdr keyval)))
+            (if (funcall (caddr cache) info)
+                (progn
+                  (remhash key (car cache))
+                  (funcall (cadddr cache) val)
+                  nil)
+              val)))))
+
+  (defun cache-puthash (key val cache)
+    "Puts the key-val pair into cache."
+    (puthash key
+             (cons val (funcall (cadr cache)))
+             (car cache))))
 
 (provide 'c-eldoc)
 ;;; c-eldoc.el ends here

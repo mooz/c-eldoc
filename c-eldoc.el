@@ -24,7 +24,7 @@
 ;;; Commentary:
 
 ;; To enable: put the following in your .emacs file:
-;; 
+;;
 ;; (add-hook 'c-mode-hook 'c-turn-on-eldoc-mode)
 
 ;; Nathaniel has submitted a caching patch to make this workable on large projects "like the emacs
@@ -103,13 +103,13 @@ to the created hash table."
                   (funcall (cadddr cache) val)
                   nil)
               val)))))
-   
+
   (defun cache-puthash (key val cache)
     "Puts the key-val pair into cache."
     (puthash key
              (cons val (funcall (cadr cache)))
              (car cache))))
-         
+
 
 ;; if you've got a non-GNU preprocessor with funny options, set these
 ;; variables to fix it

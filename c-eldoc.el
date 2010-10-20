@@ -119,7 +119,7 @@ to the created hash table."
 
 (defface c-eldoc-current-argument-face
   '((t (:foreground "tomato" :bold t)))
-  "Style of selected item in *Completions* buffer")
+  "Style of the corresponding argument in the document")
 
 ;; if you've got a non-GNU preprocessor with funny options, set these
 ;; variables to fix it

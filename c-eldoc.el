@@ -110,6 +110,16 @@ to the created hash table."
              (cons val (funcall (cadr cache)))
              (car cache))))
 
+;; original function
+(defun c-eldoc-cache-force-expire (key cache)
+  "Force expire the key in the cache."
+  (let ((keyval (gethash key (car cache))))
+    (if keyval
+        (let ((val (car keyval))
+              (info (cdr keyval)))
+          (remhash key (car cache))
+          (funcall (cadddr cache) val)))))
+
 ;; ============================================================
 ;; Variables
 ;; ============================================================
@@ -280,7 +290,7 @@ T1 and T2 are time values (as returned by `current-time' for example)."
         (backward-char (length current-function))
         (c-skip-ws-backward)
         (setq function-name-point (point))
-        (search-backward-regexp "[{};/#]" (point-min) t)
+        (search-backward-regexp "[{}=,:;/#]" (point-min) t)
         ;; check for macros
         (if (= (char-after) ?#)
             (let ((is-define (looking-at "#[[:space:]]*define"))
@@ -358,12 +368,21 @@ T1 and T2 are time values (as returned by `current-time' for example)."
             (c-eldoc-create-message tag-buffer c-eldoc-current-function-cons)
           ;; else
           (unless (gethash cur-buffer c-eldoc-pp-is-running-table)
+            (eldoc-message "Getting the documentation ...")
             (deferred:nextc (c-eldoc-deferred:tag-buffer cur-buffer)
               (lambda (buffer)
                 ;; delayed. create and display last functions document.
-                (eldoc-message (c-eldoc-create-message buffer c-eldoc-current-function-cons))))
+                (when c-eldoc-current-function-cons
+                  (eldoc-message (c-eldoc-create-message buffer c-eldoc-current-function-cons)))))
             nil)
           )))))
+
+(defun c-eldoc-force-cache-update ()
+  "Returns documentation string for the current symbol."
+  (interactive)
+  (let ((cur-buffer (current-buffer)))
+    (c-eldoc-cache-force-expire cur-buffer c-eldoc-buffers)
+    (c-eldoc-print-current-symbol-info)))
 
 (provide 'c-eldoc)
 ;;; c-eldoc.el ends here

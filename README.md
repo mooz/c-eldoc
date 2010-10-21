@@ -37,6 +37,21 @@ Cache
 
     (setq c-eldoc-buffer-regenerate-time 60)
 
+You can explicitly force update the cache and get latest result by calling `c-eldoc-force-cache-update`.
+
+The following settings this update command to the `Ctrl-c + d` key.
+
+    (defun c-eldoc-define-keybindings (map)
+      (define-key map (kbd "C-c d") 'c-eldoc-force-cache-update))
+    
+    (add-hook 'c-mode-hook
+              (lambda ()
+                (c-eldoc-define-keybindings c-mode-map)))
+    
+    (add-hook 'c++-mode-hook
+              (lambda ()
+                (c-eldoc-define-keybindings c++-mode-map)))
+
 Compile options
 ---------------
 

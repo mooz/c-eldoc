@@ -236,8 +236,6 @@ T1 and T2 are time values (as returned by `current-time' for example)."
                                 buffer-file-name))
          (output-buffer (generate-new-buffer
                          (concat "*" buffer-file-name "-preprocessed*"))))
-    ;; mark as preprocessor is running on `buffer'
-    (puthash buffer t c-eldoc-pp-is-running-table)
     (bury-buffer output-buffer)
     ;; create deferred and return it
     (deferred:$
@@ -368,6 +366,8 @@ T1 and T2 are time values (as returned by `current-time' for example)."
             (eldoc-message (c-eldoc-create-message tag-buffer c-eldoc-current-function-cons))
           ;; else
           (unless (gethash cur-buffer c-eldoc-pp-is-running-table)
+            ;; mark as preprocessor is running on `buffer'
+            (puthash cur-buffer t c-eldoc-pp-is-running-table)
             (eldoc-message "Getting the documentation ...")
             (deferred:nextc (c-eldoc-deferred:tag-buffer cur-buffer)
               (lambda (buffer)

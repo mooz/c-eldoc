@@ -365,7 +365,7 @@ T1 and T2 are time values (as returned by `current-time' for example)."
                (not (member current-function c-eldoc-reserved-words)))
       (let ((tag-buffer (cache-gethash cur-buffer c-eldoc-buffers)))
         (if tag-buffer
-            (c-eldoc-create-message tag-buffer c-eldoc-current-function-cons)
+            (eldoc-message (c-eldoc-create-message tag-buffer c-eldoc-current-function-cons))
           ;; else
           (unless (gethash cur-buffer c-eldoc-pp-is-running-table)
             (eldoc-message "Getting the documentation ...")

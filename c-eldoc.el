@@ -265,7 +265,7 @@ T1 and T2 are time values (as returned by `current-time' for example)."
 ;; ============================================================
 
 (defun c-eldoc-get-info (buffer current-function)
-  (let ((current-function-regexp (concat "[ \t\n]+[*]*" current-function "[ \t\n]*("))
+  (let ((current-function-regexp (concat "\\<" current-function "[ \t\n]*("))
         (current-macro-regexp (concat "#define[ \t\n]+[*]*" current-function "[ \t\n]*("))
         (arguments)
         (type-face 'font-lock-type-face)

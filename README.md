@@ -3,7 +3,7 @@ c-eldoc.el
 
 Display description of the function under the cursor.
 
-![screenshot of c-eldoc](http://github.com/mooz/c-eldoc/raw/master/images/screenshot.png"Display prototypes for the function under the cursor")
+![screenshot of c-eldoc](http://github.com/mooz/c-eldoc/raw/master/images/screenshot.png "Display prototypes for the function under the cursor")
 
 Original version: [http://www.emacswiki.org/emacs/c-eldoc.el](http://www.emacswiki.org/emacs/c-eldoc.el)
 
